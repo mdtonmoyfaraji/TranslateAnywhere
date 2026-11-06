@@ -1,0 +1,72 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pillow
+
+      - name: Install Windows OCR packages (optional)
+        shell: bash
+        continue-on-error: true
+        run: pip install -r requirements-ocr.txt
+
+      - name: Smoke test (imports)
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -c "import swifttr.controller, swifttr.ui_settings; from swifttr import ocr; print('OCR available:', ocr.AVAILABLE, ocr.IMPORT_ERROR)"
+
+      - name: Make icon
+        shell: bash
+        run: python tools/make_icon.py
+
+      - name: Build exe
+        shell: bash
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed \
+            --name SwiftTranslateWin \
+            --icon assets/icon.ico \
+            --hidden-import win32clipboard --hidden-import win32con \
+            --hidden-import winrt._winrt \
+            --hidden-import winrt.windows.foundation \
+            --hidden-import winrt.windows.foundation.collections \
+            --hidden-import winrt.windows.globalization \
+            --hidden-import winrt.windows.graphics.imaging \
+            --hidden-import winrt.windows.media.ocr \
+            --hidden-import winrt.windows.storage.streams \
+            main.py
+
+      - name: Upload exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: SwiftTranslateWin-exe
+          path: dist/SwiftTranslateWin.exe
+          if-no-files-found: error
+
+      - name: Attach exe to release (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/SwiftTranslateWin.exe
