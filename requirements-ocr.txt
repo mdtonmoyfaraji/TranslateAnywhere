@@ -1,0 +1,9 @@
+# Optional: Windows built-in OCR (used for "drag bubble onto text" and screen snip).
+# If these fail to install the app still builds; OCR features are then disabled.
+winrt-runtime
+winrt-Windows.Foundation
+winrt-Windows.Foundation.Collections
+winrt-Windows.Globalization
+winrt-Windows.Graphics.Imaging
+winrt-Windows.Media.Ocr
+winrt-Windows.Storage.Streams
