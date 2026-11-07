@@ -1,9 +1,19 @@
-LANGUAGES = [
-    "English", "Bengali", "Hindi", "Urdu", "Arabic", "German", "French", "Spanish",
-    "Portuguese", "Italian", "Dutch", "Russian", "Ukrainian", "Polish", "Turkish",
-    "Persian", "Chinese (Simplified)", "Chinese (Traditional)", "Japanese", "Korean",
-    "Vietnamese", "Thai", "Indonesian", "Malay", "Filipino", "Tamil", "Telugu",
-    "Marathi", "Gujarati", "Punjabi", "Nepali", "Sinhala", "Swahili", "Hebrew",
-    "Greek", "Czech", "Slovak", "Hungarian", "Romanian", "Bulgarian", "Serbian",
-    "Croatian", "Swedish", "Norwegian", "Danish", "Finnish",
-]
+LANGUAGES = sorted(set([
+    "Afrikaans", "Albanian", "Amharic", "Arabic", "Armenian", "Assamese", "Azerbaijani", "Basque",
+    "Belarusian", "Bengali", "Bhojpuri", "Bosnian", "Bulgarian", "Burmese", "Cantonese", "Catalan",
+    "Cebuano", "Chinese (Simplified)", "Chinese (Traditional)", "Corsican", "Croatian", "Czech",
+    "Danish", "Dari", "Dhivehi", "Dogri", "Dutch", "English", "Esperanto", "Estonian", "Ewe",
+    "Faroese", "Filipino", "Finnish", "French", "Frisian", "Galician", "Georgian", "German", "Greek",
+    "Guarani", "Gujarati", "Haitian Creole", "Hausa", "Hawaiian", "Hebrew", "Hindi", "Hmong",
+    "Hungarian", "Icelandic", "Igbo", "Ilocano", "Indonesian", "Irish", "Italian", "Japanese",
+    "Javanese", "Kannada", "Kazakh", "Khmer", "Kinyarwanda", "Konkani", "Korean", "Krio",
+    "Kurdish (Kurmanji)", "Kurdish (Sorani)", "Kyrgyz", "Lao", "Latin", "Latvian", "Lingala",
+    "Lithuanian", "Luganda", "Luxembourgish", "Macedonian", "Maithili", "Malagasy", "Malay",
+    "Malayalam", "Maltese", "Maori", "Marathi", "Meitei (Manipuri)", "Mizo", "Mongolian", "Nepali",
+    "Norwegian", "Odia (Oriya)", "Oromo", "Pashto", "Persian", "Polish", "Portuguese", "Punjabi",
+    "Quechua", "Romanian", "Russian", "Samoan", "Sanskrit", "Scots Gaelic", "Sepedi", "Serbian",
+    "Sesotho", "Shona", "Sindhi", "Sinhala", "Slovak", "Slovenian", "Somali", "Spanish", "Sundanese",
+    "Swahili", "Swedish", "Tajik", "Tamil", "Tatar", "Telugu", "Thai", "Tibetan", "Tigrinya",
+    "Tsonga", "Turkish", "Turkmen", "Twi", "Ukrainian", "Urdu", "Uyghur", "Uzbek", "Vietnamese",
+    "Welsh", "Xhosa", "Yiddish", "Yoruba", "Zulu",
+]))

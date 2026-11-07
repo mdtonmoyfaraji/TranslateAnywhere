@@ -1,44 +1,48 @@
 # Swift Translate Win
 
-Windows translator in the style of the Android app "Swift Translate":
+Windows translator in the style of the Android app "Swift Translate".
 
-* **Floating bubble** on the left or right screen edge. **Drag it onto any text and release** – the text under
-  the pointer is read and translated. Click it for a quick-translate box. Right-click for the menu.
-  Shift+drag moves the bubble (it snaps to the nearest edge).
-* **Select text anywhere** (Settings → Select anywhere): hold a key you choose (default **F8**) and
-  double-click a word or drag-select text in *any* program. The text is **copied** (Ctrl+C, never cut),
-  a small bubble appears next to it, click it to see the translation.
-  If the program has nothing to copy (images, some custom UIs) the text is read from the screen with Windows OCR.
-* **Screen snip** (default **F9**): draw a rectangle on screen, the text inside is recognised, copied and translated.
-* **API connections**: any OpenAI-compatible endpoint (base URL, model, API key). Add as many as you like.
-  They are tried top to bottom; if one fails the next is used and so on. If all fail you get one error that lists
-  every failure. "Test selected" / "Test all" check the connections.
+## What it does
+
+* **Automatic selection** – select text anywhere (website, browser, any app) and it is grabbed by itself
+  (Settings → Select anywhere). It only COPIES (Ctrl+C), never cuts. The pointer must be a text cursor (I-beam),
+  so moving windows or files is ignored (can be switched off).
+* **After grabbing** (Settings → General): *Translate automatically* ON = the translation box opens by itself;
+  OFF = a small bubble appears next to the text, click it to translate.
+* **Grab screen text** – hold a key (default **F8**) and the screen freezes with every word found by OCR selectable:
+  drag over words, double-click = word, triple-click = line, Ctrl+A = all. Works on images, videos, buttons, PDFs –
+  everything you can see. A quick tap keeps the grab screen open until you select or press Esc.
+* **Screen snip** (default **F9**) – draw a rectangle, the text inside is recognised, copied and translated.
+* **Floating bubble** – dock it to the left, right, top or bottom edge. Drag it onto text and release to translate
+  that text. Click for a quick-translate box. Move it: Shift+drag, or press and hold half a second and drag.
+  Right-click for the menu.
+* **Always on top** – the bubble, trigger bubble and translation box are re-raised every 0.7 s so they stay above
+  every window, including other always-on-top apps (each can be switched off in settings).
+* **Copy icons** in the original-text and translation fields. 140+ target languages (type to search).
+* **API connections** – any OpenAI-compatible endpoint (base URL, model, API key). Tried top to bottom; if one fails
+  the next is used, and so on; if all fail one error lists every failure. Test selected / Test all.
 
 ## Get the .exe with GitHub Actions
 
-1. Create a new GitHub repository.
-2. Upload **all** files of this folder, keeping the structure – including the hidden `.github/workflows/build.yml`
-   (easiest: unzip, then drag the *contents* of the folder into the GitHub upload page, or use GitHub Desktop / git).
-3. Open the **Actions** tab → **Build Windows EXE** → it runs automatically on push (or press *Run workflow*).
-4. When it is green, open the run and download the artifact **SwiftTranslateWin-exe**. Unzip, run `SwiftTranslateWin.exe`.
-   (Pushing a tag like `v1.0` also attaches the exe to a GitHub Release.)
+1. Create a repository and upload **all** files, including the hidden `.github/workflows/build.yml`
+   (if the folder does not upload: *Add file → Create new file*, name it `.github/workflows/build.yml`, paste the content).
+2. Actions tab → **Build Windows EXE** → *Run workflow* (it also runs on every push).
+3. Download the artifact **SwiftTranslateWin-exe**. It contains two files:
+   * `SwiftTranslateWin.exe` – normal.
+   * `SwiftTranslateWin-Admin.exe` – asks for administrator rights; use it if the bubble/selection does not react
+     over programs that run as administrator (Task Manager, installers, some tools).
 
 ## First start
 
-1. Tray icon (near the clock) → **Settings → API connections** → *Add*, pick a preset or fill base URL, model and key,
-   press **Test selected**, then **Save**.
-2. Pick the target language in *General*.
+Tray icon → **Settings → API connections** → Add, pick a preset or fill base URL / model / key, *Test selected*, *Save*.
+Choose the target language in *General*.
 
-## Notes and limits
+## Notes
 
-* Windows may show SmartScreen for an unsigned exe: *More info → Run anyway*.
-* Programs running **as administrator** ignore simulated Ctrl+C / clicks from a normal program. Run the app as
-  administrator if you need to select text inside such programs.
-* The held key is hidden from other programs (F8 does nothing there) unless you disable that in settings. Modifier keys
-  (Ctrl/Shift/Alt) can be used as the trigger but they are never hidden and Alt/Ctrl combine with mouse clicks in many apps,
-  so a plain key such as F8 is recommended.
-* OCR uses Windows' built-in engine and only supports languages that have an OCR language pack installed
-  (Settings → Time & language → Language & region). Copy-based selection works for every language.
-* If a program has nothing selected, "copy" can copy something else (e.g. a selected file). Enable *restore clipboard*
-  if that bothers you.
-* API keys are stored as plain text in `%APPDATA%\SwiftTranslateWin\config.json`. Log: `app.log` in the same folder.
+* The input is read by polling the mouse/keyboard state (no global hooks), so Windows cannot silently switch it off.
+  The grab key (F8) is not hidden from other programs.
+* Windows OCR only reads languages that have an OCR language pack installed (Settings → Select anywhere has a button).
+  Copy-based selection works for every language.
+* Keyboard-only selections (Shift+Arrows, Ctrl+A) are not detected automatically; use the grab key or snip.
+* API keys are stored in plain text in `%APPDATA%\SwiftTranslateWin\config.json`; log: `app.log` in the same folder.
+* Windows SmartScreen may warn about an unsigned exe: *More info → Run anyway*.

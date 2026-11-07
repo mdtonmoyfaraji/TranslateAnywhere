@@ -122,3 +122,45 @@ def pick_text(lines: list, px: float, py: float, scope: str = "line") -> str:
     while hi < len(order) - 1 and near(order[hi], order[hi + 1]):
         hi += 1
     return " ".join(lines[i].text.strip() for i in order[lo:hi + 1])
+
+
+def installed_languages() -> list:
+    """[(tag, display name)] of OCR languages installed in Windows."""
+    if not AVAILABLE:
+        return []
+    try:
+        return [(l.language_tag, l.display_name) for l in OcrEngine.available_recognizer_languages]
+    except Exception:
+        return []
+
+
+def _is_cjk(ch: str) -> bool:
+    return bool(ch) and ord(ch[0]) >= 0x2E80
+
+
+def _adjacent(a, b) -> bool:
+    ax0, ay0, ax1, ay1 = a.rect
+    bx0, by0, bx1, by1 = b.rect
+    gap = max(by0 - ay1, ay0 - by1)
+    height = max(ay1 - ay0, by1 - by0)
+    return gap < height * 0.9 and min(ax1, bx1) > max(ax0, bx0)
+
+
+def join_words(entries: list, lines: list) -> str:
+    """entries: [(line_index, Word)] in reading order -> text (wrapped lines joined with a space)."""
+    out = []
+    prev = None
+    for li, w in entries:
+        if prev is None:
+            out.append(w.text)
+        else:
+            pli, pw = prev
+            if li == pli:
+                sep = "" if (_is_cjk(pw.text[-1:]) and _is_cjk(w.text[:1])) else " "
+            else:
+                sep = " " if _adjacent(lines[pli], lines[li]) else "\n"
+                if sep == " " and _is_cjk(pw.text[-1:]) and _is_cjk(w.text[:1]):
+                    sep = ""
+            out.append(sep + w.text)
+        prev = (li, w)
+    return "".join(out).strip()

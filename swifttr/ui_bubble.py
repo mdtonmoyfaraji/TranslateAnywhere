@@ -33,9 +33,12 @@ def make_icon(size: int = 64) -> QIcon:
 
 
 class DockBubble(QWidget):
-    """Floating bubble docked to the left/right screen edge.
-    Click = quick translate panel. Drag onto text and release = translate that text.
-    Shift+drag = move the bubble to another spot/edge. Right click = menu."""
+    """Floating bubble docked to any screen edge (left / right / top / bottom).
+
+    * click                      -> quick-translate box
+    * drag onto text + release   -> translate the text under the pointer
+    * Shift+drag, or press-and-hold for half a second and then drag -> move the bubble (snaps to nearest edge)
+    * right click                -> menu"""
 
     clicked = Signal()
     dropped = Signal(QPoint)
@@ -50,9 +53,13 @@ class DockBubble(QWidget):
         self._pressed = False
         self._dragging = False
         self._reposition = False
+        self._move_mode = False
         self._press_pos = QPoint()
         self._screen = None
         self._anim = None
+        self._hold = QTimer(self)
+        self._hold.setSingleShot(True)
+        self._hold.timeout.connect(self._enter_move_mode)
         self.apply_config()
 
     def apply_config(self) -> None:
@@ -76,8 +83,14 @@ class DockBubble(QWidget):
     def dock_point(self) -> QPoint:
         geo = (self._screen or QGuiApplication.primaryScreen()).availableGeometry()
         s = self.width()
-        x = geo.left() if self.cfg["bubble_side"] == "left" else geo.right() - s + 1
-        y = geo.top() + int(float(self.cfg["bubble_y"]) * max(1, geo.height() - s))
+        side = self.cfg["bubble_side"]
+        r = max(0.0, min(1.0, float(self.cfg["bubble_y"])))
+        if side in ("left", "right"):
+            x = geo.left() if side == "left" else geo.right() - s + 1
+            y = geo.top() + int(r * max(1, geo.height() - s))
+        else:
+            y = geo.top() if side == "top" else geo.bottom() - s + 1
+            x = geo.left() + int(r * max(1, geo.width() - s))
         return QPoint(x, y)
 
     def place_docked(self, animate: bool = False) -> None:
@@ -97,7 +110,7 @@ class DockBubble(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         r = self.rect().adjusted(3, 3, -3, -3)
         if self._dragging and not self._reposition:
-            # pick mode: show only a ring so the text underneath stays visible
+            # pick mode: only a ring so the text underneath stays visible
             p.setPen(QPen(QColor("#6a8dff"), 3))
             p.setBrush(QColor(106, 141, 255, 45))
             p.drawEllipse(r)
@@ -105,14 +118,25 @@ class DockBubble(QWidget):
             p.drawPoint(self.rect().center())
             return
         _paint_disc(p, r)
+        if self._move_mode:
+            p.setPen(QPen(QColor("#ffffff"), 3))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(r.adjusted(2, 2, -2, -2))
 
     def enterEvent(self, _e) -> None:
         self.setWindowOpacity(1.0)
 
     def leaveEvent(self, _e) -> None:
-        self.setWindowOpacity(int(self.cfg["bubble_opacity"]) / 100)
+        if not self._pressed:
+            self.setWindowOpacity(int(self.cfg["bubble_opacity"]) / 100)
 
     # ---- mouse
+    def _enter_move_mode(self) -> None:
+        if self._pressed and not self._dragging:
+            self._move_mode = True
+            self.setCursor(Qt.CursorShape.SizeAllCursor)
+            self.update()
+
     def mousePressEvent(self, e) -> None:
         if e.button() == Qt.MouseButton.RightButton:
             self.menu_requested.emit(e.globalPosition().toPoint())
@@ -120,7 +144,9 @@ class DockBubble(QWidget):
         if e.button() == Qt.MouseButton.LeftButton:
             self._pressed = True
             self._dragging = False
+            self._move_mode = False
             self._press_pos = e.globalPosition().toPoint()
+            self._hold.start(500)
 
     def mouseMoveEvent(self, e) -> None:
         if not self._pressed:
@@ -128,20 +154,25 @@ class DockBubble(QWidget):
         gp = e.globalPosition().toPoint()
         if not self._dragging and (gp - self._press_pos).manhattanLength() > 6:
             self._dragging = True
+            self._hold.stop()
             self.setWindowOpacity(1.0)
         if self._dragging:
-            self._reposition = bool(e.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            self._reposition = self._move_mode or bool(e.modifiers() & Qt.KeyboardModifier.ShiftModifier)
             self.move(gp.x() - self.width() // 2, gp.y() - self.height() // 2)
             self.update()
 
     def mouseReleaseEvent(self, e) -> None:
         if e.button() != Qt.MouseButton.LeftButton or not self._pressed:
             return
-        was_dragging, reposition = self._dragging, self._reposition
-        self._pressed = self._dragging = self._reposition = False
+        self._hold.stop()
+        was_dragging, reposition, was_move = self._dragging, self._reposition, self._move_mode
+        self._pressed = self._dragging = self._reposition = self._move_mode = False
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         gp = e.globalPosition().toPoint()
         if not was_dragging:
-            self.clicked.emit()
+            if not was_move:
+                self.clicked.emit()
+            self.update()
             return
         if reposition:
             self._snap_to_edge(gp)
@@ -155,10 +186,19 @@ class DockBubble(QWidget):
     def _snap_to_edge(self, gp: QPoint) -> None:
         scr = QGuiApplication.screenAt(gp) or QGuiApplication.primaryScreen()
         geo = scr.availableGeometry()
+        s = self.width()
+        dist = {
+            "left": gp.x() - geo.left(), "right": geo.right() - gp.x(),
+            "top": gp.y() - geo.top(), "bottom": geo.bottom() - gp.y(),
+        }
+        side = min(dist, key=dist.get)
+        if side in ("left", "right"):
+            ratio = (gp.y() - geo.top() - s / 2) / max(1, geo.height() - s)
+        else:
+            ratio = (gp.x() - geo.left() - s / 2) / max(1, geo.width() - s)
         self._screen = scr
         self.cfg["bubble_screen"] = scr.name()
-        self.cfg["bubble_side"] = "left" if gp.x() < geo.center().x() else "right"
-        ratio = (gp.y() - geo.top() - self.height() / 2) / max(1, geo.height() - self.height())
+        self.cfg["bubble_side"] = side
         self.cfg["bubble_y"] = max(0.0, min(1.0, ratio))
         self.cfg.save()
         self.place_docked(animate=True)

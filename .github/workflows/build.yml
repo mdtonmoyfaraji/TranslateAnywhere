@@ -18,6 +18,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-ocr.txt
 
       - name: Install dependencies
         shell: bash
@@ -42,14 +46,13 @@ jobs:
         shell: bash
         run: python tools/make_icon.py
 
-      - name: Build exe
+      - name: Build exe (normal)
         shell: bash
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed \
             --name SwiftTranslateWin \
             --icon assets/icon.ico \
             --hidden-import win32clipboard --hidden-import win32con \
-            --hidden-import winrt._winrt \
             --hidden-import winrt.windows.foundation \
             --hidden-import winrt.windows.foundation.collections \
             --hidden-import winrt.windows.globalization \
@@ -58,15 +61,31 @@ jobs:
             --hidden-import winrt.windows.storage.streams \
             main.py
 
-      - name: Upload exe
+      - name: Build exe (administrator, works over elevated windows)
+        shell: bash
+        run: |
+          pyinstaller --noconfirm --onefile --windowed --uac-admin \
+            --name SwiftTranslateWin-Admin \
+            --icon assets/icon.ico \
+            --hidden-import win32clipboard --hidden-import win32con \
+            --hidden-import winrt.windows.foundation \
+            --hidden-import winrt.windows.foundation.collections \
+            --hidden-import winrt.windows.globalization \
+            --hidden-import winrt.windows.graphics.imaging \
+            --hidden-import winrt.windows.media.ocr \
+            --hidden-import winrt.windows.storage.streams \
+            main.py
+          ls -la dist
+
+      - name: Upload exes
         uses: actions/upload-artifact@v4
         with:
           name: SwiftTranslateWin-exe
-          path: dist/SwiftTranslateWin.exe
+          path: dist/*.exe
           if-no-files-found: error
 
       - name: Attach exe to release (tags only)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/SwiftTranslateWin.exe
+          files: dist/*.exe

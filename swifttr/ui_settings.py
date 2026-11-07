@@ -7,10 +7,11 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
                                QLabel, QLineEdit, QListWidget, QMessageBox, QPlainTextEdit, QPushButton,
                                QSlider, QSpinBox, QTabWidget, QVBoxLayout, QWidget)
+import os
 
 from . import config as C
 from . import ocr, translator
-from .languages import LANGUAGES
+from .langcombo import make_lang_combo
 
 PRESETS = [
     ("Custom / other", "", ""),
@@ -31,7 +32,7 @@ class SettingsDialog(QDialog):
     def __init__(self, cfg, hooks, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Swift Translate Win \u2014 Settings")
-        self.resize(780, 600)
+        self.resize(800, 680)
         self.cfg = cfg
         self.hooks = hooks
         self.conns = copy.deepcopy(cfg["connections"])
@@ -62,11 +63,7 @@ class SettingsDialog(QDialog):
     # ------------------------------------------------------------------ tabs
     @staticmethod
     def _lang_combo(value: str) -> QComboBox:
-        cb = QComboBox()
-        cb.setEditable(True)
-        cb.addItems(LANGUAGES)
-        cb.setCurrentText(value)
-        return cb
+        return make_lang_combo(value)
 
     def _tab_general(self) -> QWidget:
         w = QWidget()
@@ -74,14 +71,20 @@ class SettingsDialog(QDialog):
         c = self.cfg
         self.c_target = self._lang_combo(c["target_language"])
         self.c_second = self._lang_combo(c["second_language"])
-        f.addRow("Translate into:", self.c_target)
+        f.addRow("Translate into (type to search):", self.c_target)
         f.addRow("If text is already in that language, translate into:", self.c_second)
+
+        self.c_autotr = QCheckBox("Translate automatically as soon as text is grabbed (show the translation box)")
+        self.c_autotr.setChecked(c["auto_translate"])
+        f.addRow(self.c_autotr)
+        f.addRow(QLabel("Off = a small bubble appears next to the text instead; click it to translate."))
 
         self.c_bubble = QCheckBox("Show the floating bubble")
         self.c_bubble.setChecked(c["bubble_enabled"])
         self.c_side = QComboBox()
-        self.c_side.addItems(["Left", "Right"])
-        self.c_side.setCurrentIndex(0 if c["bubble_side"] == "left" else 1)
+        for label, v in (("Left edge", "left"), ("Right edge", "right"), ("Top edge", "top"), ("Bottom edge", "bottom")):
+            self.c_side.addItem(label, v)
+        self.c_side.setCurrentIndex(max(0, self.c_side.findData(c["bubble_side"])))
         self.c_size = QSpinBox()
         self.c_size.setRange(36, 110)
         self.c_size.setValue(int(c["bubble_size"]))
@@ -89,11 +92,17 @@ class SettingsDialog(QDialog):
         self.c_opacity.setRange(25, 100)
         self.c_opacity.setValue(int(c["bubble_opacity"]))
         f.addRow(self.c_bubble)
-        f.addRow("Bubble side:", self.c_side)
+        f.addRow("Bubble edge:", self.c_side)
         f.addRow("Bubble size (px):", self.c_size)
         f.addRow("Bubble opacity when idle:", self.c_opacity)
-        f.addRow(QLabel("Tip: drag the bubble onto text and release to translate it. "
-                        "Hold Shift while dragging to move the bubble. Click it for a quick-translate box."))
+        f.addRow(QLabel("Move the bubble: Shift+drag, or press and hold it for half a second and then drag. "
+                        "It snaps to the nearest edge (left, right, top or bottom)."))
+        self.c_top1 = QCheckBox("Keep the side bubble above ALL windows (also above other always-on-top apps)")
+        self.c_top1.setChecked(c["bubble_topmost"])
+        self.c_top2 = QCheckBox("Keep the trigger bubble and translation box above ALL windows")
+        self.c_top2.setChecked(c["popup_topmost"])
+        f.addRow(self.c_top1)
+        f.addRow(self.c_top2)
 
         self.c_method = QComboBox()
         self.c_method.addItem("Auto (OCR, click-select if OCR is unavailable)", "auto")
@@ -133,45 +142,65 @@ class SettingsDialog(QDialog):
         w = QWidget()
         f = QFormLayout(w)
         c = self.cfg
-        self.s_enable = QCheckBox("Enable \u201cselect text anywhere\u201d (works over every other app)")
-        self.s_enable.setChecked(c["selection_enabled"])
-        f.addRow(self.s_enable)
-        f.addRow("Hold this key while selecting:", self._key_row("trigger"))
-        self.s_suppress = QCheckBox("Hide that key from other apps (ignored for Ctrl/Shift/Alt/Win)")
-        self.s_suppress.setChecked(c["suppress_trigger"])
-        self.s_dbl = QCheckBox("Double-click a word")
+
+        f.addRow(QLabel("<b>1. Automatic selection (no key needed)</b>"))
+        self.s_detect = QCheckBox("Whenever I select text anywhere (website, browser, any app) grab it automatically")
+        self.s_detect.setChecked(c["auto_detect"])
+        self.s_cursor = QCheckBox("Only when the pointer is a text cursor (avoids reacting to moving windows/files)")
+        self.s_cursor.setChecked(c["text_cursor_only"])
+        self.s_dbl = QCheckBox("Double-click / triple-click a word")
         self.s_dbl.setChecked(c["on_double_click"])
         self.s_drag = QCheckBox("Drag to select")
         self.s_drag.setChecked(c["on_drag"])
         self.s_min = QSpinBox()
         self.s_min.setRange(4, 80)
         self.s_min.setValue(int(c["min_drag_px"]))
-        self.s_ocr = QCheckBox("If the app has nothing to copy, read the text from the screen with OCR")
+        self.s_ocr = QCheckBox("If the app has nothing to copy, read the dragged area with OCR")
         self.s_ocr.setChecked(c["ocr_fallback"])
-        self.s_restore = QCheckBox("Put the previous clipboard text back afterwards (otherwise the selected text stays copied)")
+        self.s_restore = QCheckBox("Put the previous clipboard text back afterwards (otherwise the selection stays copied)")
         self.s_restore.setChecked(c["restore_clipboard"])
-        self.s_auto = QCheckBox("Translate immediately (skip the small bubble)")
-        self.s_auto.setChecked(c["auto_translate"])
-        for wd in (self.s_suppress, self.s_dbl, self.s_drag):
+        for wd in (self.s_detect, self.s_cursor, self.s_dbl, self.s_drag):
             f.addRow(wd)
         f.addRow("Minimum drag distance (px):", self.s_min)
-        for wd in (self.s_ocr, self.s_restore, self.s_auto):
-            f.addRow(wd)
-        f.addRow(QLabel("Selecting only COPIES the text (Ctrl+C). It never cuts, so nothing is removed from the other app."))
+        f.addRow(self.s_ocr)
+        f.addRow(self.s_restore)
+        f.addRow(QLabel("Grabbing only COPIES the text (Ctrl+C). It never cuts, so nothing is removed from the other app. "
+                        "What happens next (translation box or small bubble) is set in General."))
 
         f.addRow(QLabel(""))
+        f.addRow(QLabel("<b>2. Grab screen text (hold or tap a key)</b>"))
+        self.g_enable = QCheckBox("Enable: hold the key and ALL text on the screen becomes selectable and copyable")
+        self.g_enable.setChecked(c["selection_enabled"])
+        f.addRow(self.g_enable)
+        f.addRow("Key:", self._key_row("trigger"))
+        f.addRow(QLabel("Hold the key, then drag over the text (double-click = word, triple-click = line, Ctrl+A = all). "
+                        "A quick tap keeps the grab screen open until you select or press Esc."))
+
+        f.addRow(QLabel(""))
+        f.addRow(QLabel("<b>3. Screen snip</b>"))
         self.n_enable = QCheckBox("Enable screen snip (draw a rectangle, OCR it, translate)")
         self.n_enable.setChecked(c["snip_enabled"])
         f.addRow(self.n_enable)
         f.addRow("Snip key (press once):", self._key_row("snip"))
-        self.n_copy = QCheckBox("Copy the recognised text to the clipboard")
+        self.n_copy = QCheckBox("Copy recognised text (snip and grab screen) to the clipboard")
         self.n_copy.setChecked(c["snip_copy_text"])
         f.addRow(self.n_copy)
-        self.n_lang = QLineEdit(c["ocr_lang"])
-        self.n_lang.setPlaceholderText("empty = your Windows languages, or a tag like en-US, de-DE, ja")
+
+        self.n_lang = QComboBox()
+        self.n_lang.addItem("Auto (your Windows languages)", "")
+        for tag, name in ocr.installed_languages():
+            self.n_lang.addItem(f"{name} ({tag})", tag)
+        cur = c["ocr_lang"]
+        idx = self.n_lang.findData(cur)
+        if idx < 0 and cur:
+            self.n_lang.addItem(cur, cur)
+            idx = self.n_lang.count() - 1
+        self.n_lang.setCurrentIndex(max(0, idx))
         f.addRow("OCR language:", self.n_lang)
         status = "available" if ocr.AVAILABLE else "NOT available in this build (" + ocr.IMPORT_ERROR[:80] + ")"
-        f.addRow(QLabel("Windows OCR: " + status))
+        b = QPushButton("Add OCR languages in Windows\u2026")
+        b.clicked.connect(lambda: os.startfile("ms-settings:regionlanguage"))
+        f.addRow(QLabel("Windows OCR: " + status), b)
         return w
 
     def _tab_api(self) -> QWidget:
@@ -390,28 +419,31 @@ class SettingsDialog(QDialog):
         c = self.cfg
         c["target_language"] = self.c_target.currentText().strip() or "English"
         c["second_language"] = self.c_second.currentText().strip() or "English"
+        c["auto_translate"] = self.c_autotr.isChecked()
         c["bubble_enabled"] = self.c_bubble.isChecked()
-        c["bubble_side"] = "left" if self.c_side.currentIndex() == 0 else "right"
+        c["bubble_side"] = self.c_side.currentData()
         c["bubble_size"] = self.c_size.value()
         c["bubble_opacity"] = self.c_opacity.value()
+        c["bubble_topmost"] = self.c_top1.isChecked()
+        c["popup_topmost"] = self.c_top2.isChecked()
         c["drop_method"] = self.c_method.currentData()
         c["drop_scope"] = self.c_scope.currentData()
         c["popup_font_size"] = self.c_font.value()
         c["autostart"] = self.c_auto.isChecked()
 
-        c["selection_enabled"] = self.s_enable.isChecked()
-        c["trigger_vk"], c["trigger_name"] = self._keys["trigger"]
-        c["suppress_trigger"] = self.s_suppress.isChecked()
+        c["auto_detect"] = self.s_detect.isChecked()
+        c["text_cursor_only"] = self.s_cursor.isChecked()
         c["on_double_click"] = self.s_dbl.isChecked()
         c["on_drag"] = self.s_drag.isChecked()
         c["min_drag_px"] = self.s_min.value()
         c["ocr_fallback"] = self.s_ocr.isChecked()
         c["restore_clipboard"] = self.s_restore.isChecked()
-        c["auto_translate"] = self.s_auto.isChecked()
+        c["selection_enabled"] = self.g_enable.isChecked()
+        c["trigger_vk"], c["trigger_name"] = self._keys["trigger"]
         c["snip_enabled"] = self.n_enable.isChecked()
         c["snip_vk"], c["snip_name"] = self._keys["snip"]
         c["snip_copy_text"] = self.n_copy.isChecked()
-        c["ocr_lang"] = self.n_lang.text().strip()
+        c["ocr_lang"] = self.n_lang.currentData() or ""
 
         c["connections"] = self.conns
         c["start_from_last_working"] = self.v_last.isChecked()

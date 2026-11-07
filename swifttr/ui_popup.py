@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QGuiApplication
+from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPen
 from PySide6.QtWidgets import (QComboBox, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel,
-                               QPushButton, QTextEdit, QVBoxLayout, QWidget)
+                               QPushButton, QTextEdit, QToolButton, QVBoxLayout, QWidget)
 
-from .languages import LANGUAGES
+from .langcombo import make_lang_combo
 
 WT = Qt.WindowType
 WIDTH = 440
@@ -27,7 +27,62 @@ QPushButton#close:hover { color:#ffffff; }
 """
 
 
-class SrcEdit(QTextEdit):
+class CopyButton(QToolButton):
+    """Small 'copy' icon button (two overlapping sheets); shows a check mark after copying."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(26, 26)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Copy")
+        self._done = False
+        self.setStyleSheet("QToolButton{background:#2d3447;border:none;border-radius:6px;}"
+                           "QToolButton:hover{background:#4a6cf7;}")
+
+    def flash(self) -> None:
+        self._done = True
+        self.update()
+        QTimer.singleShot(1000, self._reset)
+
+    def _reset(self) -> None:
+        self._done = False
+        self.update()
+
+    def paintEvent(self, e) -> None:
+        super().paintEvent(e)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(QColor("#eceff6"), 1.6)
+        p.setPen(pen)
+        if self._done:
+            p.setPen(QPen(QColor("#6ee7a0"), 2.2))
+            p.drawLine(7, 13, 11, 17)
+            p.drawLine(11, 17, 19, 8)
+            return
+        p.drawRoundedRect(9, 6, 10, 12, 2, 2)      # back sheet
+        p.setBrush(QColor("#2d3447"))
+        p.drawRoundedRect(6, 9, 10, 12, 2, 2)      # front sheet
+
+
+class CopyField(QTextEdit):
+    """Text box with a copy icon in its top-right corner."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setViewportMargins(0, 0, 32, 0)
+        self.btn = CopyButton(self)
+        self.btn.clicked.connect(self._copy)
+
+    def _copy(self) -> None:
+        QGuiApplication.clipboard().setText(self.toPlainText())
+        self.btn.flash()
+
+    def resizeEvent(self, e) -> None:
+        super().resizeEvent(e)
+        self.btn.move(self.width() - self.btn.width() - 4, 4)
+
+
+class SrcEdit(CopyField):
     submit = Signal()
 
     def keyPressEvent(self, e) -> None:
@@ -67,10 +122,8 @@ class TranslatePopup(QWidget):
 
         head = QHBoxLayout()
         head.addWidget(QLabel("Translate to"))
-        self.lang = QComboBox()
-        self.lang.setEditable(True)
-        self.lang.addItems(LANGUAGES)
-        self.lang.setMinimumWidth(170)
+        self.lang = make_lang_combo(cfg["target_language"])
+        self.lang.setMinimumWidth(190)
         head.addWidget(self.lang)
         head.addStretch(1)
         self.btn_close = QPushButton("\u2715")
@@ -83,7 +136,7 @@ class TranslatePopup(QWidget):
         self.src.setPlaceholderText("Type or paste text, press Enter to translate (Shift+Enter = new line)")
         lay.addWidget(self.src)
 
-        self.out = QTextEdit()
+        self.out = CopyField()
         self.out.setReadOnly(True)
         lay.addWidget(self.out)
 
@@ -94,11 +147,9 @@ class TranslatePopup(QWidget):
         foot.addWidget(self.status, 1)
         self.btn_settings = QPushButton("Settings")
         self.btn_settings.hide()
-        self.btn_copy = QPushButton("Copy")
         self.btn_go = QPushButton("Translate")
         self.btn_go.setObjectName("go")
         foot.addWidget(self.btn_settings)
-        foot.addWidget(self.btn_copy)
         foot.addWidget(self.btn_go)
         lay.addLayout(foot)
 
@@ -106,7 +157,6 @@ class TranslatePopup(QWidget):
         self.apply_config()
 
         self.btn_close.clicked.connect(self.hide)
-        self.btn_copy.clicked.connect(self._copy)
         self.btn_go.clicked.connect(self._submit)
         self.src.submit.connect(self._submit)
         self.lang.activated.connect(lambda _i: self._submit())
@@ -121,11 +171,6 @@ class TranslatePopup(QWidget):
         text = self.src.toPlainText().strip()
         if text:
             self.translate_requested.emit(text, self.lang.currentText().strip() or self.cfg["target_language"])
-
-    def _copy(self) -> None:
-        QGuiApplication.clipboard().setText(self.out.toPlainText())
-        self.btn_copy.setText("Copied \u2713")
-        QTimer.singleShot(1200, lambda: self.btn_copy.setText("Copy"))
 
     def keyPressEvent(self, e) -> None:
         if e.key() == Qt.Key.Key_Escape:
@@ -187,7 +232,7 @@ class TranslatePopup(QWidget):
         self.raise_()
 
     def _fit(self) -> None:
-        inner = WIDTH - 20 - 24 - 12
+        inner = WIDTH - 20 - 24 - 12 - 32
         for ed, mn, mx in ((self.src, 40, 100), (self.out, 56, 280)):
             ed.document().setTextWidth(inner)
             h = int(ed.document().size().height()) + 18
@@ -203,5 +248,6 @@ class TranslatePopup(QWidget):
         x = min(max(p.x(), geo.left()), geo.right() - w)
         y = p.y()
         if y + h > geo.bottom():
-            y = max(geo.top(), self._anchor.y() - h - 10)
+            y = self._anchor.y() - h - 10 if self._offset.y() else geo.bottom() - h
+        y = max(geo.top(), min(y, geo.bottom() - h))
         self.move(x, y)

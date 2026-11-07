@@ -18,6 +18,56 @@ user32.GetForegroundWindow.restype = wintypes.HWND
 user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 user32.GetKeyNameTextW.argtypes = [ctypes.c_long, wintypes.LPWSTR, ctypes.c_int]
 
+user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+user32.GetAsyncKeyState.restype = ctypes.c_short
+user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                ctypes.c_int, wintypes.UINT]
+user32.SetWindowPos.restype = wintypes.BOOL
+user32.LoadCursorW.argtypes = [wintypes.HINSTANCE, ctypes.c_void_p]
+user32.LoadCursorW.restype = wintypes.HANDLE
+
+
+class _CURSORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("flags", wintypes.DWORD),
+                ("hCursor", wintypes.HANDLE), ("ptScreenPos", wintypes.POINT)]
+
+
+user32.GetCursorInfo.argtypes = [ctypes.POINTER(_CURSORINFO)]
+_IBEAM = None
+_HWND_TOPMOST = wintypes.HWND(-1)
+_HWND_NOTOPMOST = wintypes.HWND(-2)
+_EXTENDED_VKS = {0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E, 0x6F, 0x90}
+
+
+def key_down(vk: int) -> bool:
+    """Physical key / mouse-button state right now (works system-wide, no hooks needed)."""
+    return (user32.GetAsyncKeyState(vk) & 0x8000) != 0
+
+
+def set_topmost(hwnd: int, on: bool = True) -> None:
+    """Put a window at the very top of the topmost band without activating it."""
+    try:
+        # NOSIZE | NOMOVE | NOACTIVATE | NOOWNERZORDER | ASYNCWINDOWPOS
+        user32.SetWindowPos(hwnd, _HWND_TOPMOST if on else _HWND_NOTOPMOST, 0, 0, 0, 0, 0x4213)
+    except Exception:
+        log.exception("SetWindowPos failed")
+
+
+def cursor_is_ibeam() -> bool:
+    """True if the mouse pointer currently is a text cursor (I-beam)."""
+    global _IBEAM
+    try:
+        if _IBEAM is None:
+            _IBEAM = user32.LoadCursorW(None, 32513)
+        ci = _CURSORINFO()
+        ci.cbSize = ctypes.sizeof(_CURSORINFO)
+        if not user32.GetCursorInfo(ctypes.byref(ci)):
+            return True
+        return ci.hCursor == _IBEAM
+    except Exception:
+        return True
+
+
 MODIFIER_VKS = {0x10, 0x11, 0x12, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0x5B, 0x5C, 0x14}
 _NAMES = {
     0xA0: "Left Shift", 0xA1: "Right Shift", 0xA2: "Left Ctrl", 0xA3: "Right Ctrl",
@@ -29,7 +79,9 @@ def is_modifier(vk: int) -> bool:
     return vk in MODIFIER_VKS
 
 
-def vk_name(vk: int, scan: int = 0, extended: bool = False) -> str:
+def vk_name(vk: int, scan: int = 0, extended: bool | None = None) -> str:
+    if extended is None:
+        extended = vk in _EXTENDED_VKS
     if vk in _NAMES:
         return _NAMES[vk]
     if 0x70 <= vk <= 0x87:
